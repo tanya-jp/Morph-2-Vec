@@ -30,17 +30,27 @@ echo "== spaCy model for POS counts"
 python -c "import en_core_web_trf" 2>/dev/null || python -m spacy download en_core_web_trf
 
 echo "== scratch folders: $M2V_SCRATCH"
-mkdir -p "$M2V_SCRATCH/data" "$M2V_SCRATCH/outputs" "$M2V_SCRATCH/logs" "$HF_HOME"
-# data/ and outputs/ are gitignored; point them at /scratch so the repo in $HOME stays small
-for d in data outputs; do
-    if [ -L "$d" ]; then
-        continue
-    elif [ -e "$d" ]; then
-        echo "WARNING: $M2V_REPO/$d already exists and is not a link; move its contents to $M2V_SCRATCH/$d and re-run." >&2
+mkdir -p "$M2V_SCRATCH/logs" "$HF_HOME"
+# Point the big pipeline folders at /scratch so the repo in $HOME stays small.
+# data/ is linked as a whole. outputs/ stays a real folder because git tracks
+# outputs/feasibility/; each pipeline output folder inside it is linked instead.
+link_to_scratch() {  # $1 = path inside the repo
+    local target="$M2V_SCRATCH/$1"
+    mkdir -p "$target"
+    if [ -L "$1" ]; then
+        return
+    elif [ -e "$1" ]; then
+        echo "WARNING: $M2V_REPO/$1 already exists and is not a link; move its contents to $target and re-run." >&2
     else
-        ln -s "$M2V_SCRATCH/$d" "$d"
-        echo "linked $d -> $M2V_SCRATCH/$d"
+        ln -s "$target" "$1"
+        echo "linked $1 -> $target"
     fi
+}
+link_to_scratch data
+mkdir -p outputs
+for d in preprocessed_data preprocessing hidden_states state_space_specs equivalence_datasets \
+         pos_counts analogy models model_embeddings tmp logs; do
+    link_to_scratch "outputs/$d"
 done
 
 echo "== check"

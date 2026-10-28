@@ -2,12 +2,13 @@
 # Smoke test: the whole pipeline on test-clean, layer 8, with a tiny probe training run.
 # Checks the environment, offline caches and GPU before spending hours on train-clean-100.
 #
-#   source alliance/config.sh && sbatch alliance/jobs/smoke.sbatch
+#   bash alliance/smoke.sh
 #
 #SBATCH --job-name=m2v-smoke
 #SBATCH --time=03:00:00
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+# GPU type comes from M2V_GPUS (config.sh); submit with alliance/smoke.sh / submit_all.sh
 #SBATCH --gpus-per-node=1
 #SBATCH --output=%x-%j.out
 set -euo pipefail

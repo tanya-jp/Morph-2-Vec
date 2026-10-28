@@ -11,6 +11,7 @@
 #SBATCH --time=10:00:00
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
+# GPU type comes from M2V_GPUS (config.sh); submit with alliance/smoke.sh / submit_all.sh
 #SBATCH --gpus-per-node=1
 #SBATCH --output=%x-%A_%a.out
 set -euo pipefail

@@ -2,6 +2,22 @@
 
 This folder runs the full pipeline (`scripts/run_pipeline.py`) on an Alliance Canada cluster with SLURM. The goal is all 12 layers of wav2vec2-base on LibriSpeech `train-clean-100`, the paper's Fig. 1 setup. Our CAS 784 project uses those runs to compare English past tense (VBD) across layers.
 
+## Quick start: test that everything works
+
+On a login node (Fir: `ssh <username>@fir.alliancecan.ca`):
+
+```bash
+git clone -b alliance https://github.com/tanya-jp/Morph-2-Vec.git ~/Morph-2-Vec
+cd ~/Morph-2-Vec
+echo 'export M2V_EMAIL="you@mcmaster.ca"' > alliance/local.sh   # optional: job emails
+tmux new -s m2v                          # keeps the next two steps running if SSH drops
+bash alliance/setup_env.sh               # once; ~20-30 min
+bash alliance/prefetch.sh test-clean     # small test data, a few minutes
+bash alliance/smoke.sh                   # submits the test job (~1 h on a GPU)
+```
+
+When the job has finished, `bash alliance/status.sh test-clean` should show `ok` in every column for layer 8. If it does, the full run is `bash alliance/prefetch.sh` followed by `bash alliance/submit_all.sh` (step 4 below).
+
 The pipeline code is the same as on Bart's Windows machine. This folder adds:
 
 | File | What it does | Where it runs |
@@ -9,6 +25,7 @@ The pipeline code is the same as on Bart's Windows machine. This folder adds:
 | `config.sh` | Settings: account, paths, split, layers, GPU request | sourced by everything |
 | `setup_env.sh` | Python environment, spaCy model, `data/` and `outputs/` linked to `/scratch` | login node, once |
 | `prefetch.sh` | Downloads everything the jobs need, because compute nodes may have no internet | login node |
+| `smoke.sh` | Checks setup and data are in place, then submits `jobs/smoke.sbatch` | login node |
 | `jobs/smoke.sbatch` | Whole pipeline on `test-clean`, layer 8, tiny probe training | GPU job, ~1 h |
 | `jobs/prepare.sbatch` | Extract audio + preprocessing notebook | CPU job |
 | `jobs/extract.sbatch` | Hidden states for all layers in one pass + layer-independent stages | GPU job |
@@ -25,7 +42,14 @@ Code changes outside this folder:
 
 Any cluster with GPUs works: Nibi, Fir, Rorqual, Narval, or Trillium's GPU partition. The scripts work whether or not compute nodes have internet. The account is `def-brodbeck`.
 
-One wav2vec2-base layer is small for an H100. If your cluster offers MIG slices (fractions of a GPU), setting `M2V_GPUS` to one may get jobs scheduled sooner and use less of the allocation's priority. Check the cluster's page on docs.alliancecan.ca.
+**GPU type.** Some clusters, Fir among them, refuse a GPU job that doesn't name the GPU type. `config.sh` picks one automatically from what the cluster offers:
+1. A 40 GB slice of an H100 (MIG `3g.40gb`). This is plenty for wav2vec2-base (Bart used a 12 GB GPU), and slices usually start sooner.
+2. Otherwise, a whole H100.
+3. Otherwise, any GPU.
+
+To choose yourself, set `M2V_GPUS` in `alliance/local.sh`, e.g. `export M2V_GPUS="h100:1"` for a whole H100. If `sbatch` rejects the memory or CPU request for a slice, a whole H100 is the fix. Submit through `smoke.sh` and `submit_all.sh`; they pass the GPU type. A plain `sbatch alliance/jobs/*.sbatch` asks for "any GPU", which Fir refuses.
+
+**Login node trouble.** If a login node gives `Input/output error`s on files under `/cvmfs` (we hit this on Fir's `login2`), switch nodes with `ssh login1` and work there.
 
 On Trillium, jobs must be submitted from `$SCRATCH`. Clone the repo there and set `M2V_REPO` accordingly.
 
@@ -78,9 +102,8 @@ It ends by checking that wav2vec2-base and the spaCy model load with the network
 ### 3. Smoke test
 
 ```bash
-source alliance/config.sh
-sbatch alliance/jobs/smoke.sbatch
-squeue -u $USER              # wait; the log is m2v-smoke-<jobid>.out in the current folder
+bash alliance/smoke.sh       # prints the job number, the live-log command and how to check the result
+squeue -u $USER              # PD = waiting, R = running; logs are in $SCRATCH/morph2vec/logs
 bash alliance/status.sh test-clean
 ```
 
