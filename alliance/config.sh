@@ -63,11 +63,12 @@ export M2V_MAIL_TYPE="${M2V_MAIL_TYPE:-BEGIN,END,FAIL,TIME_LIMIT_80}"
 # sbatch / salloc read these, so jobs are charged to the right allocation
 export SBATCH_ACCOUNT="$M2V_ACCOUNT"
 export SALLOC_ACCOUNT="$M2V_ACCOUNT"
-# ... and these, so every sbatch (incl. the smoke test) emails you when M2V_EMAIL is set
+# sbatch options for email notifications (sbatch has no environment variables for these,
+# so smoke.sh and submit_all.sh pass them on the command line)
+M2V_MAIL_ARGS=()
 if [ -n "$M2V_EMAIL" ]; then
-    export SBATCH_MAIL_USER="$M2V_EMAIL" SBATCH_MAIL_TYPE="$M2V_MAIL_TYPE"
-else
-    unset SBATCH_MAIL_USER SBATCH_MAIL_TYPE
+    # shellcheck disable=SC2034
+    M2V_MAIL_ARGS=(--mail-user="$M2V_EMAIL" --mail-type="$M2V_MAIL_TYPE")
 fi
 
 export HF_HOME="$M2V_SCRATCH/hf_cache"        # wav2vec2 weights + datasets cache

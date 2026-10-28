@@ -20,7 +20,7 @@ fi
 
 logs="$M2V_SCRATCH/logs"
 mkdir -p "$logs"
-jid=$(sbatch --parsable --export=ALL --gpus-per-node="$M2V_GPUS" \
+jid=$(sbatch --parsable --export=ALL --gpus-per-node="$M2V_GPUS" "${M2V_MAIL_ARGS[@]}" \
       --output="$logs/%x-%j.out" alliance/jobs/smoke.sbatch)
 echo "Smoke test submitted: job $jid (GPU: $M2V_GPUS)"
 [ -n "$M2V_EMAIL" ] && echo "Emails go to $M2V_EMAIL"

@@ -88,7 +88,7 @@ Put your email in `alliance/local.sh`. That file is gitignored, so your address 
 echo 'export M2V_EMAIL="you@mcmaster.ca"' > alliance/local.sh
 ```
 
-Every job then emails you when it starts, finishes, fails, or has used 80% of its time limit. The 12 layer jobs send one email per layer when it finishes or fails, without the "started" emails. Change what triggers an email with `M2V_MAIL_TYPE` in `config.sh`.
+Every job then emails you when it starts, finishes, fails, or has used 80% of its time limit. The 12 layer jobs send one email per layer when it finishes or fails, without the "started" emails. Change what triggers an email with `M2V_MAIL_TYPE` in `config.sh`. Emails only work for jobs submitted through `smoke.sh` or `submit_all.sh`; a plain `sbatch` sends none.
 
 ### 2. Download (login node)
 

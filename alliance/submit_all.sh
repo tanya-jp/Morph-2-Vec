@@ -18,7 +18,7 @@ from=prepare
 
 logs="$M2V_SCRATCH/logs"
 mkdir -p "$logs"
-common=(--parsable --export=ALL)
+common=(--parsable --export=ALL "${M2V_MAIL_ARGS[@]}")
 gpu=(--gpus-per-node="$M2V_GPUS")
 dep=()
 
