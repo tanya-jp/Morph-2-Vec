@@ -2,13 +2,17 @@
 Cross-platform runner for the Morph-2-Vec analogy pipeline.
 
 Replaces the bash-based Snakemake rules (Snakefile, workflows/librispeech/Snakefile)
-so the pipeline runs natively on Windows. It calls the same scripts / notebooks with
+so the pipeline runs natively on Windows and Linux (incl. Alliance Canada clusters;
+see alliance/README.md). It calls the same scripts / notebooks with
 the same Hydra overrides and writes to the same output paths, so the summary
 notebooks (`summary_notebooks/analogy v4*.ipynb`) can read the results unchanged.
 
 Stages (run in this order by `--stage all`):
 
-    download    LibriSpeech split + MFA alignments; FLAC -> 16 kHz WAV
+    fetch       everything that needs the internet: LibriSpeech + alignment archives,
+                the British->American spelling map, CMUdict and the base model weights
+                (run it alone on a login node when compute nodes are offline)
+    download    extract the archives; FLAC -> 16 kHz WAV
     preprocess  notebooks/preprocessing/librispeech.ipynb   -> outputs/preprocessed_data
     extract     scripts/extract_hidden_states.py (all layers in one pass) -> outputs/hidden_states
     specs       scripts/generate_state_space_specs.py       -> outputs/state_space_specs
@@ -53,9 +57,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 LIBRISPEECH_URL_FORMAT = "https://www.openslr.org/resources/12/{split}.tar.gz"
 LIBRISPEECH_ALIGNMENTS_URL = "https://zenodo.org/records/2619474/files/librispeech_alignments.zip?download=1"
+# small text resources read by notebooks/preprocessing/librispeech.ipynb; cached here so
+# preprocessing can run on compute nodes without internet access
+EXTERNAL_RESOURCES = {
+    "data/external/british_spellings.json":
+        "https://raw.githubusercontent.com/hyperreality/American-British-English-Translator/master/data/british_spellings.json",
+    "data/external/cmudict.dict":
+        "https://github.com/cmusphinx/cmudict/raw/master/cmudict.dict",
+}
 
 EQUIVALENCE = "word_broad_10frames_fixedlen25"
-STAGES = ["download", "preprocess", "extract", "specs", "equiv", "pos", "inputs",
+STAGES = ["fetch", "download", "preprocess", "extract", "specs", "equiv", "pos", "inputs",
           "train", "embed", "analogy"]
 
 
@@ -248,6 +260,32 @@ def download(url: str, dest: Path, max_retries: int = 5):
         except requests.RequestException as e:
             log(f"download interrupted ({e}); retrying ({attempt + 1}/{max_retries})")
     raise RuntimeError(f"failed to download {url}")
+
+
+def stage_fetch(paths: Paths, split: str, layer: int):
+    """Download everything that needs the network, without extracting or processing it."""
+    downloads = Path("data/downloads")
+    if not is_done(paths.raw_split(split)):
+        download(LIBRISPEECH_URL_FORMAT.format(split=split), downloads / f"{split}.tar.gz")
+    if not is_done(paths.alignments()):
+        download(LIBRISPEECH_ALIGNMENTS_URL, downloads / "librispeech_alignments.zip")
+    for dest, url in EXTERNAL_RESOURCES.items():
+        download(url, Path(dest))
+
+    # base model weights -> Hugging Face cache ($HF_HOME)
+    from omegaconf import OmegaConf
+    model_ref = OmegaConf.load(REPO_ROOT / "conf/base_model" / f"{paths.base_model(layer)}.yaml").model_ref
+    log(f"caching base model weights {model_ref}")
+    import transformers
+    transformers.AutoModel.from_pretrained(model_ref)  # downloads exactly the files it loads
+
+
+def available_cpus() -> int:
+    """CPUs this process may use (the SLURM allocation on a cluster, not the whole node)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # Windows / macOS
+        return os.cpu_count() or 2
 
 
 def flac_to_wav(flac_path: str):
@@ -476,6 +514,8 @@ def main(args):
     paths = Paths(args.base_model_class, Path(args.hot_dir) if args.hot_dir else None)
 
     for s in splits:
+        if "fetch" in stages:
+            stage_fetch(paths, s, spec_layer)
         if "download" in stages:
             stage_download(paths, s, args.num_workers)
         if "preprocess" in stages:
@@ -527,5 +567,5 @@ if __name__ == "__main__":
     p.add_argument("--pos-model", default="en_core_web_trf")
     p.add_argument("--tmp-dir", default=str(REPO_ROOT / "outputs" / "tmp"),
                    help="temporary files (can reach tens of GB during preprocessing)")
-    p.add_argument("--num-workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
+    p.add_argument("--num-workers", type=int, default=max(1, available_cpus() - 2))
     main(p.parse_args())

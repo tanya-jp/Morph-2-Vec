@@ -21,7 +21,9 @@ One command downloads LibriSpeech and the alignments, extracts the hidden states
 python scripts/run_pipeline.py --split train-clean-100 --layers 8 --hot-dir F:/morph2vec_hot
 ```
 
-About 8–9 h and about 115 GB of disk for one layer; options are in §6 of Project_Feasibility.md. Quick result tables:
+About 8–9 h and about 115 GB of disk for one layer; options are in §6 of Project_Feasibility.md.
+
+**On Alliance Canada clusters** (Linux, SLURM), use the scripts in [`alliance/`](alliance/README.md): environment setup, offline prefetching, a smoke test, and a job chain for all 12 layers. Quick result tables:
 
 ```powershell
 python scripts/summarize_analogy_results.py --dataset librispeech-train-clean-100 --layer 8
