@@ -4,6 +4,14 @@
 #
 # Every script in alliance/ sources this file. Override any value by exporting it
 # before sourcing, e.g.  M2V_SPLIT=test-clean source alliance/config.sh
+#
+# Personal settings (e.g. your email) go in alliance/local.sh, which is gitignored:
+#   echo 'export M2V_EMAIL="you@mcmaster.ca"' > alliance/local.sh
+
+_m2v_local="$(dirname "${BASH_SOURCE[0]}")/local.sh"
+# shellcheck disable=SC1090
+[ -f "$_m2v_local" ] && source "$_m2v_local"
+unset _m2v_local
 
 # --- edit these ------------------------------------------------------------------
 
@@ -30,11 +38,23 @@ export M2V_MAX_PARALLEL="${M2V_MAX_PARALLEL:-6}"
 # MIG slice name if your cluster offers them (one wav2vec2-base layer fits easily).
 export M2V_GPUS="${M2V_GPUS:-1}"
 
+# email for job notifications (empty = no emails). Set it in alliance/local.sh, not here,
+# so your address doesn't end up in the public repo.
+export M2V_EMAIL="${M2V_EMAIL:-}"
+# when to email: job start, finish, failure, and when 80% of the time limit is used
+export M2V_MAIL_TYPE="${M2V_MAIL_TYPE:-BEGIN,END,FAIL,TIME_LIMIT_80}"
+
 # --- derived; normally no need to edit ----------------------------------------------
 
 # sbatch / salloc read these, so jobs are charged to the right allocation
 export SBATCH_ACCOUNT="$M2V_ACCOUNT"
 export SALLOC_ACCOUNT="$M2V_ACCOUNT"
+# ... and these, so every sbatch (incl. the smoke test) emails you when M2V_EMAIL is set
+if [ -n "$M2V_EMAIL" ]; then
+    export SBATCH_MAIL_USER="$M2V_EMAIL" SBATCH_MAIL_TYPE="$M2V_MAIL_TYPE"
+else
+    unset SBATCH_MAIL_USER SBATCH_MAIL_TYPE
+fi
 
 export HF_HOME="$M2V_SCRATCH/hf_cache"        # wav2vec2 weights + datasets cache
 export PYTHONPATH="$M2V_REPO${PYTHONPATH:+:$PYTHONPATH}"

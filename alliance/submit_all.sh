@@ -32,7 +32,12 @@ if [ "$from" = prepare ] || [ "$from" = extract ]; then
     echo "extract: job $jid"
     dep=(--dependency=afterok:"$jid")
 fi
-jid=$(sbatch "${common[@]}" "${gpu[@]}" "${dep[@]}" --array="$M2V_LAYERS%$M2V_MAX_PARALLEL" \
+# layer jobs: one email per layer when it finishes or fails (not 12 "started" emails)
+mail=()
+[ -n "$M2V_EMAIL" ] && mail=("--mail-type=END,FAIL,TIME_LIMIT_80,ARRAY_TASKS")
+jid=$(sbatch "${common[@]}" "${gpu[@]}" "${dep[@]}" "${mail[@]}" --array="$M2V_LAYERS%$M2V_MAX_PARALLEL" \
       --output="$logs/%x-%A_%a.out" alliance/jobs/layer.sbatch)
 echo "layers $M2V_LAYERS: array job $jid"
+if [ -n "$M2V_EMAIL" ]; then echo "Email notifications: $M2V_EMAIL"
+else echo "No email notifications (set M2V_EMAIL in alliance/local.sh to get them)"; fi
 echo "Logs: $logs   Progress: bash alliance/status.sh   Queue: squeue -u ${USER:-$(whoami)}"

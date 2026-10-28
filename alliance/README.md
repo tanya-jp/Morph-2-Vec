@@ -56,6 +56,16 @@ bash alliance/setup_env.sh
 
 This loads `StdEnv/2023 gcc python/3.11 arrow` and creates the virtualenv. It installs PyTorch from the Alliance wheelhouse (`pip install --no-index torch`), then `requirements.txt` and `en_core_web_trf`, and links `data/` and `outputs/` to scratch. It ends with an import check.
 
+### Email notifications (optional)
+
+Put your email in `alliance/local.sh`. That file is gitignored, so your address stays out of the repo:
+
+```bash
+echo 'export M2V_EMAIL="you@mcmaster.ca"' > alliance/local.sh
+```
+
+Every job then emails you when it starts, finishes, fails, or has used 80% of its time limit. The 12 layer jobs send one email per layer when it finishes or fails, without the "started" emails. Change what triggers an email with `M2V_MAIL_TYPE` in `config.sh`.
+
 ### 2. Download (login node)
 
 ```bash

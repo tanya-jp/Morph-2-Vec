@@ -27,3 +27,5 @@ outputs/*
 
 # guides
 feasibility_demo_plan.md
+# personal Alliance settings (email etc.)
+alliance/local.sh
