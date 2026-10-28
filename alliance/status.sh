@@ -31,4 +31,3 @@ for layer in $(seq 0 11); do
 done
 echo
 command -v diskusage_report >/dev/null && diskusage_report 2>/dev/null | head -20
-du -sh "$M2V_SCRATCH" 2>/dev/null

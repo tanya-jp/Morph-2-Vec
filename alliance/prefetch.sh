@@ -33,4 +33,4 @@ spacy.load("en_core_web_trf")
 print("wav2vec2-base and en_core_web_trf load offline: OK")
 EOF
 ls -lh data/downloads data/external
-echo "Done. Next: sbatch alliance/jobs/smoke.sbatch"
+echo "Done. Next: bash alliance/smoke.sh (test) or bash alliance/submit_all.sh (full run)"

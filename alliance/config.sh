@@ -38,7 +38,9 @@ export M2V_MAX_PARALLEL="${M2V_MAX_PARALLEL:-6}"
 # type. Left empty, it is picked from what the cluster offers: a 40 GB slice of an H100
 # (MIG 3g.40gb; plenty for wav2vec2-base, and slices start sooner), else a whole H100,
 # else any GPU. Override e.g. in alliance/local.sh:  export M2V_GPUS="h100:1"
-if [ -z "${M2V_GPUS:-}" ]; then
+# ("1" is treated like empty: it was the old default and may linger in a shell that
+# sourced an older config.sh, and Fir rejects it.)
+if [ -z "${M2V_GPUS:-}" ] || [ "$M2V_GPUS" = 1 ]; then
     _m2v_gres="$(sinfo -h -o '%G' 2>/dev/null | tr ',' '\n')"
     _m2v_mig="$(grep -o '[A-Za-z0-9_]*3g\.40gb' <<<"$_m2v_gres" | head -1)"
     if [ -n "$_m2v_mig" ]; then
@@ -50,7 +52,6 @@ if [ -z "${M2V_GPUS:-}" ]; then
     fi
     unset _m2v_gres _m2v_mig
 fi
-export M2V_GPUS
 
 # email for job notifications (empty = no emails). Set it in alliance/local.sh, not here,
 # so your address doesn't end up in the public repo.
