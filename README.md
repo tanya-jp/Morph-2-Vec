@@ -55,6 +55,25 @@ python scripts/feasibility/build_notebook.py --execute     # rebuild + run the n
 
 `outputs/` and `data/` are gitignored. Figures and tables are written to `outputs/feasibility/figures/` and `tables/`.
 
+## Past tense across layers
+
+`scripts/layers/compare_layers.py` runs the past-tense analysis of the feasibility notebook (Part 4) on every wav2vec2-base layer. It uses the notebook's own code: Figure 6's [t] / [d] / [ɪd] grid, and Figure 7's regular vs. irregular past against plural -s, 3sg -s and the random-pair control.
+
+It needs the analogy results of the layers: `outputs/analogy/runs*/…/w2v2_<layer>/…/experiment_results.csv`, plus `outputs/analogy/inputs/`. The full 12-layer run on Alliance produces them (`alliance/README.md`). To work on a laptop, copy them over:
+
+```bash
+rsync -avh --exclude 'partial_results/' <user>@fir.alliancecan.ca:/scratch/<user>/morph2vec/outputs/analogy/ outputs/analogy/
+```
+
+Then open **`notebooks/layers/past_tense_layers.ipynb`** and run it top to bottom; it takes about a minute, CPU only. Each step has a description: the data checks, a sanity check of our layer 8 against the feasibility run, the main figure, the best layer, the [t]/[d]/[ɪd] transfer, and the verbs that fail. The same analysis also runs without Jupyter: `python scripts/layers/compare_layers.py`.
+
+It needs only pandas, numpy, matplotlib and seaborn. The output in `outputs/feasibility/layers/` is small and meant to be committed:
+- `tables/layers_conditions.csv`, `tables/layers_allomorph_grid.csv`: mean rank and top-1 accuracy, with 95% item-bootstrap CIs, per layer and model.
+- `tables/layers_best.csv`: the best layer per condition.
+- `tables/layers_per_verb.csv.gz`: per-verb ranks.
+- `tables/layer8_vs_feasibility.csv`: this run's layer 8 next to the feasibility demo's layer-8 results.
+- `figures/`: the plots.
+
 ## Repository map
 
 - **`scripts/`**: pipeline runner, summary script, and `feasibility/` (the notebook's helpers and export scripts).

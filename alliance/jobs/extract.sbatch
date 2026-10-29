@@ -1,7 +1,7 @@
 #!/bin/bash
 # Step 2 (GPU): wav2vec2 hidden states for all layers in one pass, then the
 # layer-independent stages (word spans, equivalence classes, POS counts, analogy stimuli).
-# Writes ~52 GB per layer of train-clean-100 to /scratch. Bart estimated ~3-4 h for the
+# Writes ~52 GB per layer of train-clean-100 to /scratch. The feasibility demo run estimated ~3-4 h for the
 # 12-layer extraction on his desktop; the rest took ~0.5 h.
 #
 #SBATCH --job-name=m2v-extract

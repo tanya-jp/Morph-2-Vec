@@ -2,7 +2,7 @@
 # Step 3 (GPU, one array task per layer): train the word probe, embed, and run the
 # analogy experiments for the probe and for the raw wav2vec2 states.
 # The array index is the layer number:  sbatch --array=0-11%6 alliance/jobs/layer.sbatch
-# Bart's desktop: ~3.5 h per layer of train-clean-100.
+# Feasibility demo run (RTX 3080 Ti): ~3.5 h per layer of train-clean-100.
 #
 # The layer's HDF5 file (~52 GB) is copied to the node-local disk ($SLURM_TMPDIR), which
 # is much faster than /scratch for the random reads done by training and the analogy.

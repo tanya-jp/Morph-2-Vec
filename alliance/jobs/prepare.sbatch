@@ -1,6 +1,6 @@
 #!/bin/bash
 # Step 1 (CPU only): extract the archives, FLAC -> WAV, and run the preprocessing notebook.
-# Bart's desktop: ~0.5 h + ~1.5 h for train-clean-100.
+# Feasibility demo run (desktop): ~0.5 h + ~1.5 h for train-clean-100.
 #
 #SBATCH --job-name=m2v-prepare
 #SBATCH --time=06:00:00

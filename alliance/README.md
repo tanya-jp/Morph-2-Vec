@@ -18,7 +18,7 @@ bash alliance/smoke.sh                   # submits the test job (~1 h on a GPU)
 
 When the job has finished, `bash alliance/status.sh test-clean` should show `ok` in every column for layer 8. If it does, the full run is `bash alliance/prefetch.sh` followed by `bash alliance/submit_all.sh` (step 4 below).
 
-The pipeline code is the same as on Bart's Windows machine. This folder adds:
+The pipeline code is the same as in the feasibility demo run, which was on a Windows desktop. This folder adds:
 
 | File | What it does | Where it runs |
 |---|---|---|
@@ -43,7 +43,7 @@ Code changes outside this folder:
 Any cluster with GPUs works: Nibi, Fir, Rorqual, Narval, or Trillium's GPU partition. The scripts work whether or not compute nodes have internet. The account is `def-brodbeck`.
 
 **GPU type.** Some clusters, Fir among them, refuse a GPU job that doesn't name the GPU type. `config.sh` picks one automatically from what the cluster offers:
-1. A 40 GB slice of an H100 (MIG `3g.40gb`). This is plenty for wav2vec2-base (Bart used a 12 GB GPU), and slices usually start sooner.
+1. A 40 GB slice of an H100 (MIG `3g.40gb`). This is plenty for wav2vec2-base (the feasibility demo run used a 12 GB GPU), and slices usually start sooner.
 2. Otherwise, a whole H100.
 3. Otherwise, any GPU.
 
@@ -116,7 +116,7 @@ bash alliance/submit_all.sh
 bash alliance/status.sh      # check progress any time; logs are in $SCRATCH/morph2vec/logs
 ```
 
-| Job | Resources | Expected time (Bart's RTX 3080 Ti; an H100 should be faster) |
+| Job | Resources | Expected time (feasibility demo run on an RTX 3080 Ti; an H100 should be faster) |
 |---|---|---|
 | prepare | 16 CPUs, 64 GB, no GPU | ~2 h |
 | extract | 1 GPU, 8 CPUs, 64 GB | ~4 h |

@@ -18,15 +18,16 @@ printf 'shared: preprocessed%s  equivalence%s  pos%s  inputs%s\n' \
     "$(mark "outputs/equivalence_datasets/$ds/w2v2/$eq/equivalence.pkl")" \
     "$(mark "outputs/pos_counts/$ds.pkl")" \
     "$(mark "outputs/analogy/inputs/$ds/w2v2")"
-printf '\nlayer  hidden  probe   embed   analogy raw-analogy\n'
+col() { [ -e "$1.done" ] && printf '%-13s' ok || printf '%-13s' --; }
+printf '\n%-7s%-13s%-13s%-13s%-13s%-13s\n' layer hidden probe embed analogy raw-analogy
 for layer in $(seq 0 11); do
     m="w2v2_$layer"
-    printf '%5s' "$layer"
-    mark "outputs/hidden_states/$m/$ds.h5"
-    mark "outputs/models/$ds/$m/ffff_32/$eq"
-    mark "outputs/model_embeddings/$ds/$m/ffff_32/$eq/$ds.npy"
-    mark "outputs/analogy/runs/$ds/$m/ffff_32/$eq/$ds/experiment_results.csv"
-    mark "outputs/analogy/runs_id/$ds/$m/experiment_results.csv"
+    printf '%-7s' "$layer"
+    col "outputs/hidden_states/$m/$ds.h5"
+    col "outputs/models/$ds/$m/ffff_32/$eq"
+    col "outputs/model_embeddings/$ds/$m/ffff_32/$eq/$ds.npy"
+    col "outputs/analogy/runs/$ds/$m/ffff_32/$eq/$ds/experiment_results.csv"
+    col "outputs/analogy/runs_id/$ds/$m/experiment_results.csv"
     echo
 done
 echo
