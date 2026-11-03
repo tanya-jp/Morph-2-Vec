@@ -20,8 +20,8 @@ Writes to outputs/feasibility/layers/ (small; meant to be committed):
     tables/layers_per_verb.csv.gz       layer x model x target verb (regular past)
     tables/layer8_vs_feasibility.csv    this run's layer 8 next to the feasibility demo's layer-8 tables
     figures/fig_layers_conditions.{png,pdf}
-    figures/fig_layers_allomorph_top1.{png,pdf}
-    figures/fig_layers_allomorph_grids_<model>.{png,pdf}
+    figures/fig_layers_allomorph_{top1,meanrank}.{png,pdf}
+    figures/fig_layers_allomorph_grids_<model>[_meanrank].{png,pdf}
 
 Needs only pandas, numpy, matplotlib and seaborn (no GPU, no PyTorch). Run from the repo root:
 
@@ -251,8 +251,17 @@ def fig_conditions(cond: pd.DataFrame, layers: list[int]):
     save(fig, "fig_layers_conditions")
 
 
-def fig_allomorph_top1(grid: pd.DataFrame, layers: list[int]):
+# metric -> (estimate, CI low, CI high, axis label, file-name tag)
+METRICS = {
+    "top1": ("top1", "top1_lo", "top1_hi", "top-1 accuracy", "top1"),
+    "mean_rank": ("mean_rank", "mean_lo", "mean_hi", "mean rank (symlog; lower is better)", "meanrank"),
+}
+
+
+def fig_allomorph_top1(grid: pd.DataFrame, layers: list[int], metric: str = "top1"):
+    """Lines per source ending, one panel per target ending and model. metric: 'top1' or 'mean_rank' (the paper's)."""
     import matplotlib.pyplot as plt
+    est, lo, hi, ylabel, tag = METRICS[metric]
     fig, axs = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=True)
     pending = []
     for r, model in enumerate(C.MODELS):
@@ -263,17 +272,21 @@ def fig_allomorph_top1(grid: pd.DataFrame, layers: list[int]):
                 color, marker = ENDING_STYLE[src]
                 d = grid[(grid.model == model) & (grid.src == src) & (grid.tgt == tgt)].set_index("layer").reindex(layers)
                 x = np.array(layers)
-                ax.fill_between(x, d.top1_lo, d.top1_hi, color=color, alpha=0.12, lw=0)
-                ax.plot(x, d.top1, "-", color=color, marker=marker, ms=6, lw=2, label=f"source {src}")
-                ends.append((x[-1], d.top1.iloc[-1], f"from {src}"))
-            ax.set_ylim(0, 1.02)
+                ax.fill_between(x, d[lo], d[hi], color=color, alpha=0.12, lw=0)
+                ax.plot(x, d[est], "-", color=color, marker=marker, ms=6, lw=2, label=f"source {src}")
+                ends.append((x[-1], d[est].iloc[-1], f"from {src}"))
+            if metric == "mean_rank":
+                ax.set_yscale("symlog", linthresh=1)  # some cells have mean rank 0, which a log axis can't show
+                ax.set_ylim(0, None)
+            else:
+                ax.set_ylim(0, 1.02)
             ax.set_xticks(layers)
             ax.set_xlim(min(layers) - 0.3, max(layers) + 2.4)
             pending.append((ax, ends))
             if r == 0:
                 ax.set_title(f"target ending {tgt}")
             if c == 0:
-                ax.set_ylabel(f"{model}\ntop-1 accuracy")
+                ax.set_ylabel(f"{model}\n{ylabel}")
             if r == 1:
                 ax.set_xlabel("wav2vec2-base layer")
     handles, labels = axs[0, 0].get_legend_handles_labels()
@@ -282,16 +295,25 @@ def fig_allomorph_top1(grid: pd.DataFrame, layers: list[int]):
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     for ax, ends in pending:
         _end_labels(ax, ends)
-    save(fig, "fig_layers_allomorph_top1")
+    save(fig, f"fig_layers_allomorph_{tag}")
 
 
-def fig_allomorph_grids(grid: pd.DataFrame, layers: list[int]):
-    """Figure 6 of the notebook for every layer: one 3x3 heatmap per layer, per model."""
+def fig_allomorph_grids(grid: pd.DataFrame, layers: list[int], metric: str = "top1"):
+    """
+    Figure 6 of the notebook for every layer: one 3x3 heatmap per layer, per model.
+    metric: 'top1' (top-1 accuracy) or 'mean_rank' (the paper's metric, log colour scale as in the paper's Fig. 4).
+    """
     import matplotlib.pyplot as plt
-    from matplotlib.colors import Normalize
+    from matplotlib.colors import LogNorm, Normalize
+    est, _, _, _, tag = METRICS[metric]
     ncol = 6
     nrow = int(np.ceil(len(layers) / ncol))
-    norm = Normalize(vmin=0, vmax=1)
+    if metric == "mean_rank":
+        norm, cmap, cbar = LogNorm(vmin=0.05, vmax=3000, clip=True), "magma_r", "mean rank (log; lower is better)"
+        fmt = C.fmt_rank
+    else:
+        norm, cmap, cbar = Normalize(vmin=0, vmax=1), "Blues", "top-1 accuracy"
+        fmt = lambda x: f"{x:.2f}" if np.isfinite(x) else "–"  # noqa: E731
     for model in C.MODELS:
         fig, axs = plt.subplots(nrow, ncol, figsize=(2.5 * ncol + 1.2, 2.6 * nrow + 0.8), squeeze=False,
                                 gridspec_kw={"wspace": 0.12, "hspace": 0.35})
@@ -301,18 +323,19 @@ def fig_allomorph_grids(grid: pd.DataFrame, layers: list[int]):
                 continue
             layer = layers[k]
             s = grid[(grid.model == model) & (grid.layer == layer)].set_index(["src", "tgt"])
-            v = s.top1.unstack().reindex(index=ENDINGS, columns=ENDINGS)
-            annot = v.map(lambda x: f"{x:.2f}" if np.isfinite(x) else "–")
+            v = s[est].unstack().reindex(index=ENDINGS, columns=ENDINGS)
+            annot = v.map(fmt)
             bottom, left = k >= len(layers) - ncol, k % ncol == 0
-            im = C.heatmap(ax, v, annot, norm, cmap="Blues", title=f"layer {layer}", fontsize=8,
+            colour = v.clip(lower=norm.vmin) if metric == "mean_rank" else v  # rank 0 would be "bad" on a log scale
+            im = C.heatmap(ax, colour, annot, norm, cmap=cmap, title=f"layer {layer}", fontsize=8,
                            xlabel="target" if bottom else "", ylabel="source" if left else "")
             if not bottom:
                 ax.set_xticklabels([])
             if not left:
                 ax.set_yticklabels([])
-        fig.colorbar(im, ax=axs, label="top-1 accuracy", shrink=0.8)
-        fig.suptitle(f"{model}: regular past tense, top-1 accuracy per ending pair and layer")
-        save(fig, f"fig_layers_allomorph_grids_{model.lower()}")
+        fig.colorbar(im, ax=axs, label=cbar, shrink=0.8)
+        fig.suptitle(f"{model}: regular past tense, {cbar.split(' (')[0]} per ending pair and layer")
+        save(fig, f"fig_layers_allomorph_grids_{model.lower()}" + ("" if metric == "top1" else f"_{tag}"))
 
 
 def save(fig, name: str):
@@ -355,8 +378,9 @@ def main(args):
 
     print("figures ...")
     fig_conditions(cond, layers)
-    fig_allomorph_top1(grid, layers)
-    fig_allomorph_grids(grid, layers)
+    for metric in METRICS:
+        fig_allomorph_top1(grid, layers, metric)
+        fig_allomorph_grids(grid, layers, metric)
 
     pd.set_option("display.width", 160)
     print("\nBest layer per condition (top-1 accuracy):")

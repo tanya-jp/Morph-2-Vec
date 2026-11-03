@@ -1,0 +1,29 @@
+*.csv
+*.png
+*.zip
+*.pt
+data
+__pycache__
+*.pyc
+.ipynb_checkpoints
+*.h5
+out
+outputs/*
+!outputs/feasibility
+!outputs/feasibility/**
+.snakemake
+*.log
+*.pkl
+*.mp4
+
+*.parquet
+.vscode
+.DS_Store
+
+# transient notebooks
+202*.ipynb
+# transient dirs
+2024*
+
+# guides
+feasibility_demo_plan.md
