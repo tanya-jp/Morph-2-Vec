@@ -50,6 +50,8 @@ OUT = C.FEAS / "layers"
 TABLES, FIGURES = OUT / "tables", OUT / "figures"
 ENDING_LABEL = {"T": "[t]", "D": "[d]", "IH D": "[ɪd]"}
 ENDINGS = ["[t]", "[d]", "[ɪd]"]
+IRREGULAR = "irreg."                 # irregular pasts (no modals, be, homographs), as one row/column
+CATEGORIES = ENDINGS + [IRREGULAR]   # rows and columns of the ending grids
 
 # Figure 7 conditions; the names match outputs/feasibility/tables/table9_regular_vs_irregular.csv
 COND_PAST_REG = "past regular"
@@ -90,6 +92,40 @@ def load_pairs() -> pd.DataFrame:
 
 # --------------------------------------------------------------------------- one layer (notebook Part 4)
 
+def ending_grid_trials(vbd: pd.DataFrame, reg3: pd.DataFrame, pairs: pd.DataFrame, flagged: set) -> pd.DataFrame:
+    """
+    Trials for the ending grid, with `src` / `tgt` in CATEGORIES.
+
+    * regular -> regular ([t]/[d]/[ɪd] cells): `reg3`, the `regular` experiment, exactly as in feasibility Figure 6.
+    * irregular -> irregular: the `regular` experiment's irregular group, without the flagged pairs
+      (modals, be, homographs, bases with several pasts), i.e. the "past irregular" condition of Figure 7.
+    * regular <-> irregular: only the `basic` experiment mixes the two classes (it samples a : b and c : d from
+      all past-tense pairs), so these cells come from its cross-class trials. Each side is classed with the
+      authors' is_regular (`auto_regular` in the pairs sheet) and, for regular pairs, its ending.
+    """
+    is_regular = dict(zip(zip(pairs.base, pairs.inflected), pairs.auto_regular))
+
+    def category(df: pd.DataFrame, side: str) -> pd.Series:
+        keys = list(zip(df[f"base_{side}"], df[f"inflected_{side}"]))
+        reg = pd.Series([is_regular.get(k) for k in keys], index=df.index, dtype=object)
+        ending = df[f"allomorph_{side}_canon"].map(ENDING_LABEL)
+        clean_irr = (reg == False) & ~pd.Series([k in flagged for k in keys], index=df.index)  # noqa: E712
+        out = pd.Series(np.nan, index=df.index, dtype=object)
+        out[(reg == True) & ending.notna()] = ending  # noqa: E712
+        out[clean_irr] = IRREGULAR
+        return out
+
+    irr = vbd[(vbd.experiment == "regular") & (vbd.class_from == "irregular") & ~vbd.authors_excluded].copy()
+    irr["src"], irr["tgt"] = category(irr, "from"), category(irr, "to")
+    irr = irr[(irr.src == IRREGULAR) & (irr.tgt == IRREGULAR)]
+
+    basic = vbd[(vbd.experiment == "basic") & ~vbd.authors_excluded].copy()
+    basic["src"], basic["tgt"] = category(basic, "from"), category(basic, "to")
+    cross = basic[basic.src.notna() & basic.tgt.notna() & ((basic.src == IRREGULAR) != (basic.tgt == IRREGULAR))]
+
+    return pd.concat([reg3, irr, cross], ignore_index=True)
+
+
 def layer_tables(layer: int, pairs: pd.DataFrame, n_boot: int):
     C.RESULTS = results_paths(layer)  # the feasibility export functions read C.RESULTS
     missing = [str(p) for p in C.RESULTS.values() if not p.exists()]
@@ -103,11 +139,14 @@ def layer_tables(layer: int, pairs: pd.DataFrame, n_boot: int):
     reg = vbd[(vbd.experiment == "regular") & (vbd.class_from == "regular") & ~vbd.authors_excluded].copy()
     reg3 = reg[reg.allomorph_from_canon.isin(ENDING_LABEL) & reg.allomorph_to_canon.isin(ENDING_LABEL)].copy()
     reg3["src"], reg3["tgt"] = reg3.allomorph_from_canon.map(ENDING_LABEL), reg3.allomorph_to_canon.map(ENDING_LABEL)
-    grid = C.rank_summary(reg3, ["model", "src", "tgt"], n=n_boot)
 
     # Figure 7 (notebook cell "# Figure 7: ...")
     flagged = set(C.SUPPLETIVE_PAIRS) | set(C.HOMOGRAPH_PASTS) \
         | set(map(tuple, pairs.loc[pairs.inflected.isin(C.MODAL_PASTS) | (pairs.n_pasts_for_base > 1), ["base", "inflected"]].to_numpy()))
+
+    # the ending grid: [t] / [d] / [ɪd] plus an irregular row and column
+    grid = C.rank_summary(ending_grid_trials(vbd, reg3, pairs, flagged), ["model", "src", "tgt"], n=n_boot)
+
     vreg = vbd[(vbd.experiment == "regular") & ~vbd.authors_excluded]
     irr = vreg[vreg.class_from == "irregular"]
     is_flagged = np.array([(b, i) in flagged or (b2, i2) in flagged
@@ -161,7 +200,7 @@ def layer8_vs_feasibility(grid: pd.DataFrame, cond: pd.DataFrame) -> pd.DataFram
     if 8 not in set(grid.layer) or not (t7.exists() and t9.exists()):
         return None
     cols = ["mean_rank", "top1", "n_trials"]
-    ours7 = grid[grid.layer == 8].assign(cell=lambda d: d.src + " → " + d.tgt)
+    ours7 = grid[(grid.layer == 8) & grid.src.isin(ENDINGS) & grid.tgt.isin(ENDINGS)].assign(cell=lambda d: d.src + " → " + d.tgt)
     feas7 = pd.read_csv(t7).assign(cell=lambda d: d.src + " → " + d.tgt)
     ours9 = cond[cond.layer == 8].rename(columns={"condition": "cell"})
     feas9 = pd.read_csv(t9).rename(columns={"condition": "cell"})
@@ -185,7 +224,8 @@ COND_STYLE = {
     COND_VBZ: ("#CC79A7", "D", "-", "3sg -s"),
     COND_RANDOM: (C.CONTROL_COLOR, "x", "--", "random pair"),
 }
-ENDING_STYLE = {"[t]": ("#0072B2", "o"), "[d]": ("#E69F00", "s"), "[ɪd]": ("#009E73", "^")}
+ENDING_STYLE = {"[t]": ("#0072B2", "o"), "[d]": ("#E69F00", "s"), "[ɪd]": ("#009E73", "^"),
+                IRREGULAR: ("#D55E00", "D")}
 
 
 def _end_labels(ax, labels, min_gap_pt=11):
@@ -262,13 +302,13 @@ def fig_allomorph_top1(grid: pd.DataFrame, layers: list[int], metric: str = "top
     """Lines per source ending, one panel per target ending and model. metric: 'top1' or 'mean_rank' (the paper's)."""
     import matplotlib.pyplot as plt
     est, lo, hi, ylabel, tag = METRICS[metric]
-    fig, axs = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=True)
+    fig, axs = plt.subplots(2, len(CATEGORIES), figsize=(5 * len(CATEGORIES), 8), sharex=True, sharey=True)
     pending = []
     for r, model in enumerate(C.MODELS):
-        for c, tgt in enumerate(ENDINGS):
+        for c, tgt in enumerate(CATEGORIES):
             ax = axs[r, c]
             ends = []
-            for src in ENDINGS:
+            for src in CATEGORIES:
                 color, marker = ENDING_STYLE[src]
                 d = grid[(grid.model == model) & (grid.src == src) & (grid.tgt == tgt)].set_index("layer").reindex(layers)
                 x = np.array(layers)
@@ -284,14 +324,14 @@ def fig_allomorph_top1(grid: pd.DataFrame, layers: list[int], metric: str = "top
             ax.set_xlim(min(layers) - 0.3, max(layers) + 2.4)
             pending.append((ax, ends))
             if r == 0:
-                ax.set_title(f"target ending {tgt}")
+                ax.set_title("target irregular" if tgt == IRREGULAR else f"target ending {tgt}")
             if c == 0:
                 ax.set_ylabel(f"{model}\n{ylabel}")
             if r == 1:
                 ax.set_xlabel("wav2vec2-base layer")
     handles, labels = axs[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=3, fontsize=9, frameon=False, bbox_to_anchor=(0.5, 0.955))
-    fig.suptitle("Regular past tense: transfer across [t] / [d] / [ɪd], by layer (bands = 95% item-bootstrap CI)", y=0.995)
+    fig.legend(handles, labels, loc="upper center", ncol=len(CATEGORIES), fontsize=9, frameon=False, bbox_to_anchor=(0.5, 0.955))
+    fig.suptitle("Past tense: transfer across [t] / [d] / [ɪd] and irregular pasts, by layer (bands = 95% item-bootstrap CI)", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     for ax, ends in pending:
         _end_labels(ax, ends)
@@ -300,7 +340,7 @@ def fig_allomorph_top1(grid: pd.DataFrame, layers: list[int], metric: str = "top
 
 def fig_allomorph_grids(grid: pd.DataFrame, layers: list[int], metric: str = "top1"):
     """
-    Figure 6 of the notebook for every layer: one 3x3 heatmap per layer, per model.
+    Figure 6 of the notebook for every layer, plus an irregular row and column: one 4x4 heatmap per layer, per model.
     metric: 'top1' (top-1 accuracy) or 'mean_rank' (the paper's metric, log colour scale as in the paper's Fig. 4).
     """
     import matplotlib.pyplot as plt
@@ -315,7 +355,7 @@ def fig_allomorph_grids(grid: pd.DataFrame, layers: list[int], metric: str = "to
         norm, cmap, cbar = Normalize(vmin=0, vmax=1), "Blues", "top-1 accuracy"
         fmt = lambda x: f"{x:.2f}" if np.isfinite(x) else "–"  # noqa: E731
     for model in C.MODELS:
-        fig, axs = plt.subplots(nrow, ncol, figsize=(2.5 * ncol + 1.2, 2.6 * nrow + 0.8), squeeze=False,
+        fig, axs = plt.subplots(nrow, ncol, figsize=(3.1 * ncol + 1.2, 3.2 * nrow + 0.8), squeeze=False,
                                 gridspec_kw={"wspace": 0.12, "hspace": 0.35})
         for k, ax in enumerate(axs.flat):
             if k >= len(layers):
@@ -323,7 +363,7 @@ def fig_allomorph_grids(grid: pd.DataFrame, layers: list[int], metric: str = "to
                 continue
             layer = layers[k]
             s = grid[(grid.model == model) & (grid.layer == layer)].set_index(["src", "tgt"])
-            v = s[est].unstack().reindex(index=ENDINGS, columns=ENDINGS)
+            v = s[est].unstack().reindex(index=CATEGORIES, columns=CATEGORIES)
             annot = v.map(fmt)
             bottom, left = k >= len(layers) - ncol, k % ncol == 0
             colour = v.clip(lower=norm.vmin) if metric == "mean_rank" else v  # rank 0 would be "bad" on a log scale
@@ -334,7 +374,7 @@ def fig_allomorph_grids(grid: pd.DataFrame, layers: list[int], metric: str = "to
             if not left:
                 ax.set_yticklabels([])
         fig.colorbar(im, ax=axs, label=cbar, shrink=0.8)
-        fig.suptitle(f"{model}: regular past tense, {cbar.split(' (')[0]} per ending pair and layer")
+        fig.suptitle(f"{model}: past tense, {cbar.split(' (')[0]} per source / target ending and layer (irreg. = irregular pasts)")
         save(fig, f"fig_layers_allomorph_grids_{model.lower()}" + ("" if metric == "top1" else f"_{tag}"))
 
 
