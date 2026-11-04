@@ -23,6 +23,11 @@ Stages (run in this order by `--stage all`):
     embed       scripts/extract_model_embeddings.py          -> outputs/model_embeddings
     analogy     notebooks/analogy/run.ipynb for the probe (runs/) and raw model (runs_id/)
 
+The analogy scoring rule is chosen with --analogy-method: 3cosadd (default, the paper's
+vector offset b + a* - a) or 3cosmul (Levy & Goldberg 2014). 3cosadd writes to
+outputs/analogy/runs{,_id}/ as before; any other method writes to
+outputs/analogy/runs{,_id}_<method>/ (same layout inside), so both can coexist.
+
 Every stage is skipped when its outputs are already complete (a `.done` marker is
 written next to each output), so the runner can be re-run after a failure.
 
@@ -39,6 +44,9 @@ Examples:
 
     # held-out evaluation (App. B.2): probe trained on train-clean-100, analyzed on test-clean
     python scripts/run_pipeline.py --split test-clean --train-split train-clean-100 --layers 8
+
+    # re-run only the analogies with 3CosMul on all layers (probes/embeddings are reused)
+    python scripts/run_pipeline.py --split train-clean-100 --layers 0-11 --stage analogy --analogy-method 3cosmul
 """
 
 from argparse import ArgumentParser
@@ -67,6 +75,12 @@ EXTERNAL_RESOURCES = {
 }
 
 EQUIVALENCE = "word_broad_10frames_fixedlen25"
+ANALOGY_METHODS = ["3cosadd", "3cosmul"]  # see src/analysis/analogy.py
+
+
+def analogy_runs_dir(kind: str, method: str = "3cosadd") -> str:
+    """'runs' / 'runs_id' for 3cosadd (unchanged paper layout), else e.g. 'runs_3cosmul'."""
+    return kind if method == "3cosadd" else f"{kind}_{method}"
 STAGES = ["fetch", "download", "preprocess", "extract", "specs", "equiv", "pos", "inputs",
           "train", "embed", "analogy"]
 
@@ -202,11 +216,11 @@ class Paths:
     def embeddings(self, train_split: str, split: str, layer: int, model: str) -> Path:
         return Path("outputs/model_embeddings") / self.dataset(train_split) / self.base_model(layer) / model / EQUIVALENCE / f"{self.dataset(split)}.npy"
 
-    def analogy_run(self, train_split: str, split: str, layer: int, model: str) -> Path:
-        return Path("outputs/analogy/runs") / self.dataset(train_split) / self.base_model(layer) / model / EQUIVALENCE / self.dataset(split)
+    def analogy_run(self, train_split: str, split: str, layer: int, model: str, method: str = "3cosadd") -> Path:
+        return Path("outputs/analogy") / analogy_runs_dir("runs", method) / self.dataset(train_split) / self.base_model(layer) / model / EQUIVALENCE / self.dataset(split)
 
-    def analogy_run_id(self, split: str, layer: int) -> Path:
-        return Path("outputs/analogy/runs_id") / self.dataset(split) / self.base_model(layer)
+    def analogy_run_id(self, split: str, layer: int, method: str = "3cosadd") -> Path:
+        return Path("outputs/analogy") / analogy_runs_dir("runs_id", method) / self.dataset(split) / self.base_model(layer)
 
     def hot(self, path: Path) -> Path:
         """
@@ -460,9 +474,11 @@ def stage_embed(paths: Paths, train_split: str, split: str, layer: int, model: s
     ]))
 
 
-def analogy_parameters(paths: Paths, split: str, outdir: Path, hidden_states: Path, embeddings: str) -> dict:
+def analogy_parameters(paths: Paths, split: str, outdir: Path, hidden_states: Path, embeddings: str,
+                       method: str = "3cosadd") -> dict:
     inputs = paths.analogy_inputs(split)
     return {
+        "analogy_method": method,
         "output_dir": str(outdir),
         "hidden_states_path": str(hidden_states),
         "state_space_specs_path": str(inputs / "state_space_spec.h5"),
@@ -474,21 +490,23 @@ def analogy_parameters(paths: Paths, split: str, outdir: Path, hidden_states: Pa
     }
 
 
-def stage_analogy(paths: Paths, train_split: str, split: str, layer: int, model: str):
+def stage_analogy(paths: Paths, train_split: str, split: str, layer: int, model: str,
+                  method: str = "3cosadd"):
     # word probe
-    outdir = paths.analogy_run(train_split, split, layer, model)
-    run_stage(f"analogy {paths.base_model(layer)} {model} on {split}", outdir / "experiment_results.csv",
+    outdir = paths.analogy_run(train_split, split, layer, model, method)
+    run_stage(f"analogy [{method}] {paths.base_model(layer)} {model} on {split}", outdir / "experiment_results.csv",
               lambda: run_notebook(
                   "notebooks/analogy/run.ipynb", outdir / "run.ipynb",
                   analogy_parameters(paths, split, outdir, paths.hidden_states(split, layer),
-                                     str(paths.embeddings(train_split, split, layer, model)))))
+                                     str(paths.embeddings(train_split, split, layer, model)), method)))
 
     # raw base-model hidden states ("identity" model)
-    outdir = paths.analogy_run_id(split, layer)
-    run_stage(f"analogy {paths.base_model(layer)} identity on {split}", outdir / "experiment_results.csv",
+    outdir = paths.analogy_run_id(split, layer, method)
+    run_stage(f"analogy [{method}] {paths.base_model(layer)} identity on {split}", outdir / "experiment_results.csv",
               lambda: run_notebook(
                   "notebooks/analogy/run.ipynb", outdir / "run.ipynb",
-                  analogy_parameters(paths, split, outdir, paths.hot(paths.hidden_states(split, layer)), "ID")))
+                  analogy_parameters(paths, split, outdir, paths.hot(paths.hidden_states(split, layer)), "ID",
+                                     method)))
 
 
 # --------------------------------------------------------------------------- main
@@ -538,7 +556,7 @@ def main(args):
         if "embed" in stages:
             stage_embed(paths, train_split, split, layer, args.model, args.device)
         if "analogy" in stages:
-            stage_analogy(paths, train_split, split, layer, args.model)
+            stage_analogy(paths, train_split, split, layer, args.model, args.analogy_method)
         if args.hot_cleanup:
             for s in splits:
                 paths.drop_hot(paths.hidden_states(s, layer))
@@ -553,6 +571,9 @@ if __name__ == "__main__":
     p.add_argument("--layers", default="8", help="layers, e.g. '8', '0-11', '6,8,10'")
     p.add_argument("--stage", default="all", help=f"'all' or comma-separated subset of {STAGES}")
     p.add_argument("--model", default="ffff_32", help="probe config in conf/model (paper: ffff_32)")
+    p.add_argument("--analogy-method", default="3cosadd", choices=ANALOGY_METHODS,
+                   help="analogy scoring rule: 3cosadd (paper, b + a* - a) or 3cosmul (Levy & Goldberg 2014); "
+                        "non-default methods write to outputs/analogy/runs{,_id}_<method>/")
     p.add_argument("--base-model-class", default="w2v2",
                    help="prefix of conf/base_model/{class}_{layer}.yaml")
     p.add_argument("--device", default="cuda")

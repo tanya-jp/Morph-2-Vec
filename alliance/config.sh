@@ -31,6 +31,9 @@ export M2V_VENV="${M2V_VENV:-$HOME/venvs/morph2vec}"
 # LibriSpeech split to analyze and layers to run (array indices = layer numbers)
 export M2V_SPLIT="${M2V_SPLIT:-train-clean-100}"
 export M2V_LAYERS="${M2V_LAYERS:-0-11}"
+# analogy scoring rule: 3cosadd (paper; outputs/analogy/runs{,_id}) or
+# 3cosmul (Levy & Goldberg 2014; outputs/analogy/runs{,_id}_3cosmul)
+export M2V_ANALOGY_METHOD="${M2V_ANALOGY_METHOD:-3cosadd}"
 # at most this many layer jobs run at the same time
 export M2V_MAX_PARALLEL="${M2V_MAX_PARALLEL:-6}"
 

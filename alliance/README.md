@@ -149,3 +149,13 @@ done
 ```
 
 The past-tense feasibility scripts (`scripts/feasibility/`) are still fixed to layer 8 (`BASE_MODEL` in `common.py`). Extending them to all layers is the next step.
+
+## 3CosMul instead of 3CosAdd
+
+The paper scores analogies with 3CosAdd (nearest neighbour of b + a* − a). The pipeline can also use 3CosMul (Levy & Goldberg, 2014), set by `M2V_ANALOGY_METHOD` in `config.sh` (default `3cosadd`). 3CosMul results go to `outputs/analogy/runs_3cosmul/` and `runs_id_3cosmul/`, so the 3CosAdd results stay untouched. Probes and embeddings are shared, so a layer that already finished only reruns the analogy step:
+
+```bash
+M2V_ANALOGY_METHOD=3cosmul bash alliance/submit_all.sh --from layers
+bash alliance/status.sh            # "cosmul" / "raw-cosmul" columns
+python scripts/layers/compare_layers.py --analogy-method 3cosmul   # -> outputs/feasibility/layers_3cosmul/
+```

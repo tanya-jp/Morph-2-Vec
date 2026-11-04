@@ -2,6 +2,8 @@
 # Step 3 (GPU, one array task per layer): train the word probe, embed, and run the
 # analogy experiments for the probe and for the raw wav2vec2 states.
 # The array index is the layer number:  sbatch --array=0-11%6 alliance/jobs/layer.sbatch
+# The analogy scoring rule comes from M2V_ANALOGY_METHOD (config.sh; 3cosadd or 3cosmul).
+# Probe training and embeddings are shared by both methods and skipped when already done.
 # Feasibility demo run (RTX 3080 Ti): ~3.5 h per layer of train-clean-100.
 #
 # The layer's HDF5 file (~52 GB) is copied to the node-local disk ($SLURM_TMPDIR), which
@@ -21,9 +23,10 @@ m2v_job_env
 
 LAYER="${SLURM_ARRAY_TASK_ID:?submit with --array=<layers>}"
 python scripts/run_pipeline.py --split "$M2V_SPLIT" --layers "$LAYER" \
-    --stage train,embed,analogy \
+    --stage train,embed,analogy --analogy-method "$M2V_ANALOGY_METHOD" \
     --tmp-dir "$SLURM_TMPDIR/tmp" --hot-dir "$SLURM_TMPDIR/hot" \
     --num-workers "$SLURM_CPUS_PER_TASK"
 
-python scripts/summarize_analogy_results.py --dataset "librispeech-$M2V_SPLIT" --layer "$LAYER" || true
-echo "[m2v] layer $LAYER finished"
+python scripts/summarize_analogy_results.py --dataset "librispeech-$M2V_SPLIT" --layer "$LAYER" \
+    --analogy-method "$M2V_ANALOGY_METHOD" || true
+echo "[m2v] layer $LAYER finished ($M2V_ANALOGY_METHOD)"

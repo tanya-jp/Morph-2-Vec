@@ -6,6 +6,7 @@ Reads the `experiment_results.csv` files written by `notebooks/analogy/run.ipynb
 `scripts/run_pipeline.py`) for the word probe (`runs/`) and the raw base model (`runs_id/`).
 
     python scripts/summarize_analogy_results.py --dataset librispeech-train-clean-100 --layer 8
+    python scripts/summarize_analogy_results.py --layer 8 --analogy-method 3cosmul   # runs{,_id}_3cosmul/
 
 The false-friend analysis (Fig. 5) ports the filtering of `summary_notebooks/analogy v4.ipynb`
 (cells 90-96: excluded items + "strong" false friends only), except for its inner merge with
@@ -115,10 +116,12 @@ def main(args):
     root = Path(args.root)
     dataset, train_dataset = args.dataset, args.train_dataset or args.dataset
     base_model = f"{args.base_model_class}_{args.layer}"
+    # 3cosadd keeps the paper's runs/ and runs_id/; other methods add a suffix (see run_pipeline.py)
+    suffix = "" if args.analogy_method == "3cosadd" else f"_{args.analogy_method}"
     runs = {
-        "Word probe": root / "outputs/analogy/runs" / train_dataset / base_model / args.model
+        "Word probe": root / f"outputs/analogy/runs{suffix}" / train_dataset / base_model / args.model
         / "word_broad_10frames_fixedlen25" / dataset / "experiment_results.csv",
-        "Base model (raw hidden states)": root / "outputs/analogy/runs_id" / dataset / base_model / "experiment_results.csv",
+        "Base model (raw hidden states)": root / f"outputs/analogy/runs_id{suffix}" / dataset / base_model / "experiment_results.csv",
     }
     false_friends_df = pd.read_csv(root / "outputs/analogy/inputs" / dataset / args.base_model_class / "false_friends.csv")
 
@@ -127,7 +130,7 @@ def main(args):
             print(f"[missing] {name}: {path}")
             continue
         df = pd.read_csv(path, low_memory=False)
-        print(f"\n==================== {name}: {dataset}, {base_model} ====================")
+        print(f"\n==================== {name}: {dataset}, {base_model} [{args.analogy_method}] ====================")
         print("\nFig. 3: mean rank, unambiguous NNS/VBZ (source rows -> target columns)")
         print(fig3(df).to_string())
         print("\nFig. 4: mean rank by allomorph")
@@ -149,4 +152,5 @@ if __name__ == "__main__":
     p.add_argument("--layer", default=8, type=int)
     p.add_argument("--model", default="ffff_32")
     p.add_argument("--base-model-class", default="w2v2")
+    p.add_argument("--analogy-method", default="3cosadd", choices=["3cosadd", "3cosmul"])
     main(p.parse_args())

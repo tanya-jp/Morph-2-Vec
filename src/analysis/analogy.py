@@ -186,7 +186,57 @@ def nxn_cos_sim(A, B, dim=1, eps=1e-8):
     B_l2 = torch.mul(B, B).sum(axis=dim)
     denominator = torch.max(torch.sqrt(torch.outer(A_l2, B_l2)), torch.tensor(eps))
     return torch.div(numerator, denominator)
-    
+
+
+# Analogy scoring rules for  a : a* :: b : ?   (e.g. walk : walked :: jump : ?)
+#   3cosadd  Mikolov et al. (2013), used in the paper: nearest neighbour of b + a* - a
+#   3cosmul  Levy & Goldberg (2014): cos(x, a*) * cos(x, b) / (cos(x, a) + eps),
+#            with each cosine shifted from [-1, 1] to [0, 1]
+ANALOGY_METHODS = ("3cosadd", "3cosmul")
+COSMUL_EPS = 1e-3  # Levy & Goldberg (2014)
+
+
+def analogy_distances(agg, from_base_flat_idx, from_inflected_flat_idx, to_base_flat_idx,
+                      references, method: str = "3cosadd", eps: float = COSMUL_EPS):
+    """
+    Score every reference token as the answer to  a : a* :: b : ?
+
+    `from_base_flat_idx` (a), `from_inflected_flat_idx` (a*) and `to_base_flat_idx` (b) index
+    the n sampled instances of the trial. Returns one value per reference, averaged over the
+    n instances, where LOWER IS BETTER for both methods (so the ranking code is shared):
+
+        3cosadd: cosine distance between the reference and b + a* - a
+        3cosmul: minus the 3CosMul score
+    """
+    if method == "3cosadd":
+        pair_difference = agg[from_inflected_flat_idx] - agg[from_base_flat_idx]
+        pair_base = agg[to_base_flat_idx]
+
+        pair_predicted = pair_base + pair_difference
+        pair_predicted /= torch.norm(pair_predicted, dim=1, keepdim=True)
+
+        with torch.no_grad():
+            dists = 1 - nxn_cos_sim(pair_predicted, references)
+            # mean over instances of pair
+            return dists.mean(0)
+
+    if method == "3cosmul":
+        with torch.no_grad():
+            # (cos + 1) / 2 maps the cosines to [0, 1], as in Levy & Goldberg (2014).
+            # Computed in place, one (n, N) matrix at a time, to keep GPU memory low.
+            score = nxn_cos_sim(agg[from_inflected_flat_idx], references)   # cos(x, a*)
+            score.add_(1).mul_(0.5)
+            sim_b = nxn_cos_sim(agg[to_base_flat_idx], references)          # cos(x, b)
+            score.mul_(sim_b.add_(1).mul_(0.5))
+            del sim_b
+            sim_a = nxn_cos_sim(agg[from_base_flat_idx], references)        # cos(x, a)
+            score.div_(sim_a.add_(1).mul_(0.5).add_(eps))
+            del sim_a
+            # mean over instances of pair; negate so that lower is better
+            return -score.mean(0)
+
+    raise ValueError(f"Unknown analogy method {method!r}; choose from {ANALOGY_METHODS}")
+
 
 def iter_equivalences(
         config, all_cross_instances, agg_src: np.ndarray,
@@ -330,8 +380,16 @@ def run_experiment_equiv_level(
         num_samples=100, max_num_vector_samples=250,
         seed=None,
         exclude_base_from_predictions=True,
-        include_idxs_in_predictions: Optional[dict[int, list[int]]] = None):
-    print(experiment_name)
+        include_idxs_in_predictions: Optional[dict[int, list[int]]] = None,
+        analogy_method: str = "3cosadd"):
+    """
+    `analogy_method` is "3cosadd" (the paper's vector offset, default) or "3cosmul";
+    see `analogy_distances`. With "3cosmul", `gt_distance` holds minus the 3CosMul score
+    (lower is better); `gt_label_rank` and `correct` mean the same for both methods.
+    """
+    if analogy_method not in ANALOGY_METHODS:
+        raise ValueError(f"Unknown analogy method {analogy_method!r}; choose from {ANALOGY_METHODS}")
+    print(experiment_name, f"[{analogy_method}]")
 
     # move data to device. Compute in float32: consumer GPUs run float64 at 1/32-1/64
     # of float32 throughput, which makes 768-dim runs take days.
@@ -349,18 +407,10 @@ def run_experiment_equiv_level(
         from_base_flat_idx = sample["from_base_flat_idx"]
         to_base_flat_idx = sample["to_base_flat_idx"]
 
-        # Critical analogy logic
-        pair_difference = agg[from_inflected_flat_idx] - agg[from_base_flat_idx]
-        pair_base = agg[to_base_flat_idx]
-
-        pair_predicted = pair_base + pair_difference
-        pair_predicted /= torch.norm(pair_predicted, dim=1, keepdim=True)
-
+        # Critical analogy logic (3CosAdd or 3CosMul; lower dists = better answer)
         references, references_src = agg, agg_src
-        with torch.no_grad():
-            dists = 1 - nxn_cos_sim(pair_predicted, references)
-            # mean over instances of pair
-            dists = dists.mean(0)
+        dists = analogy_distances(agg, from_base_flat_idx, from_inflected_flat_idx,
+                                  to_base_flat_idx, references, method=analogy_method)
 
         if exclude_base_from_predictions:
             base_flat_idxs = torch.where(references_src[:, 0] == sample["base_to_idx"])[0]
@@ -387,6 +437,7 @@ def run_experiment_equiv_level(
 
         nearest_neighbor = references_src[sorted_indices[0]]
         results.append({
+            "analogy_method": analogy_method,
             "group": sample["group"],
             "from_equiv_label": sample["from_equiv_label_i"],
             "to_equiv_label": sample["to_equiv_label_i"],

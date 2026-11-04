@@ -27,6 +27,8 @@ Needs only pandas, numpy, matplotlib and seaborn (no GPU, no PyTorch). Run from 
 
     python scripts/layers/compare_layers.py                  # layers 0-11
     python scripts/layers/compare_layers.py --layers 6-9     # a subset
+    python scripts/layers/compare_layers.py --analogy-method 3cosmul   # reads runs{,_id}_3cosmul/,
+                                                                       # writes outputs/feasibility/layers_3cosmul/
 """
 
 from argparse import ArgumentParser
@@ -72,11 +74,16 @@ def parse_layers(spec: str) -> list[int]:
     return sorted(set(layers))
 
 
+ANALOGY_METHOD = "3cosadd"  # set from --analogy-method in main()
+
+
 def results_paths(layer: int) -> dict[str, Path]:
     base = f"w2v2_{layer}"
+    # 3cosadd keeps the paper's runs/ and runs_id/; other methods add a suffix (see run_pipeline.py)
+    suffix = "" if ANALOGY_METHOD == "3cosadd" else f"_{ANALOGY_METHOD}"
     return {
-        "Word": C.ROOT / "outputs/analogy/runs" / C.DATASET / base / C.MODEL / C.EQUIVALENCE / C.DATASET / "experiment_results.csv",
-        "Wav2Vec": C.ROOT / "outputs/analogy/runs_id" / C.DATASET / base / "experiment_results.csv",
+        "Word": C.ROOT / f"outputs/analogy/runs{suffix}" / C.DATASET / base / C.MODEL / C.EQUIVALENCE / C.DATASET / "experiment_results.csv",
+        "Wav2Vec": C.ROOT / f"outputs/analogy/runs_id{suffix}" / C.DATASET / base / "experiment_results.csv",
     }
 
 
@@ -390,6 +397,12 @@ def save(fig, name: str):
 # --------------------------------------------------------------------------- main
 
 def main(args):
+    global ANALOGY_METHOD, OUT, TABLES, FIGURES
+    ANALOGY_METHOD = args.analogy_method
+    if ANALOGY_METHOD != "3cosadd":
+        # keep the 3CosAdd tables/figures; write this method's next to them
+        OUT = C.FEAS / f"layers_{ANALOGY_METHOD}"
+        TABLES, FIGURES = OUT / "tables", OUT / "figures"
     import matplotlib
     matplotlib.use("Agg")
     C.set_style()
@@ -436,4 +449,6 @@ if __name__ == "__main__":
     p = ArgumentParser(description=__doc__, formatter_class=lambda prog: __import__("argparse").RawDescriptionHelpFormatter(prog))
     p.add_argument("--layers", default="0-11", help="e.g. '0-11', '8', '6,8,10'")
     p.add_argument("--n-boot", type=int, default=2000, help="bootstrap resamples per cell (as in the notebook)")
+    p.add_argument("--analogy-method", default="3cosadd", choices=["3cosadd", "3cosmul"],
+                   help="which analogy runs to read (see scripts/run_pipeline.py)")
     main(p.parse_args())
