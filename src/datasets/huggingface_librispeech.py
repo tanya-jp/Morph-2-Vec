@@ -126,12 +126,26 @@ class LibrispeechASR(datasets.GeneratorBasedBuilder):
 
         return [gen]
 
+    @staticmethod
+    def _visible_dirs(path: Path):
+        """
+        Subdirectories of `path`, skipping hidden entries (e.g. macOS .DS_Store) and files.
+        pathlib's glob("*") matches dotfiles, unlike the shell. Keeps the filesystem order
+        that glob gave, so the example order (and hence frame indices) is unchanged.
+        """
+        for p in path.iterdir():
+            if not p.name.startswith(".") and p.is_dir():
+                yield p
+
     def _generate_examples(self, data_dir, split_dir):
         """Generate examples from a LibriSpeech data_dir."""
     
         key = 0
         audio_data = {}
-        for chapter_path in Path(data_dir).glob(f"LibriSpeech/{split_dir}/*/*"):
+        chapter_paths = (chapter_path
+                         for speaker_path in self._visible_dirs(Path(data_dir) / "LibriSpeech" / split_dir)
+                         for chapter_path in self._visible_dirs(speaker_path))
+        for chapter_path in chapter_paths:
             speaker_id = chapter_path.parent.name
             chapter_id = chapter_path.name
 

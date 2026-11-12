@@ -29,6 +29,8 @@ Needs only pandas, numpy, matplotlib and seaborn (no GPU, no PyTorch). Run from 
     python scripts/layers/compare_layers.py --layers 6-9     # a subset
     python scripts/layers/compare_layers.py --analogy-method 3cosmul   # reads runs{,_id}_3cosmul/,
                                                                        # writes outputs/feasibility/layers_3cosmul/
+    python scripts/layers/compare_layers.py --analogy-method 3cosmul --models Wav2Vec --layers 8
+                                       # raw wav2vec only -> outputs/feasibility/layers_3cosmul_wav2vec/
 """
 
 from argparse import ArgumentParser
@@ -135,6 +137,7 @@ def ending_grid_trials(vbd: pd.DataFrame, reg3: pd.DataFrame, pairs: pd.DataFram
 
 def layer_tables(layer: int, pairs: pd.DataFrame, n_boot: int):
     C.RESULTS = results_paths(layer)  # the feasibility export functions read C.RESULTS
+    C.RESULTS = {m: p for m, p in C.RESULTS.items() if m in C.MODELS}
     missing = [str(p) for p in C.RESULTS.values() if not p.exists()]
     if missing:
         raise FileNotFoundError(f"layer {layer}: missing " + ", ".join(missing))
@@ -403,6 +406,15 @@ def main(args):
         # keep the 3CosAdd tables/figures; write this method's next to them
         OUT = C.FEAS / f"layers_{ANALOGY_METHOD}"
         TABLES, FIGURES = OUT / "tables", OUT / "figures"
+    models = args.models.split(",")
+    unknown = set(models) - set(C.MODELS)
+    if unknown:
+        raise ValueError(f"unknown models {sorted(unknown)}; choose from {C.MODELS}")
+    if models != C.MODELS:
+        # e.g. raw wav2vec only (no probe results yet): keep it apart from the full tables
+        C.MODELS[:] = [m for m in C.MODELS if m in models]
+        OUT = OUT.with_name(OUT.name + "_" + "_".join(m.lower() for m in C.MODELS))
+        TABLES, FIGURES = OUT / "tables", OUT / "figures"
     import matplotlib
     matplotlib.use("Agg")
     C.set_style()
@@ -451,4 +463,7 @@ if __name__ == "__main__":
     p.add_argument("--n-boot", type=int, default=2000, help="bootstrap resamples per cell (as in the notebook)")
     p.add_argument("--analogy-method", default="3cosadd", choices=["3cosadd", "3cosmul"],
                    help="which analogy runs to read (see scripts/run_pipeline.py)")
+    p.add_argument("--models", default=",".join(C.MODELS),
+                   help="comma-separated subset of Word,Wav2Vec; a subset writes to e.g. "
+                        "outputs/feasibility/layers_3cosmul_wav2vec/")
     main(p.parse_args())

@@ -218,6 +218,27 @@ def get_layer_paths(config: DictConfig) -> dict[int, str]:
     return {int(layer): path_template.format(layer=layer) for layer in layers}
 
 
+def truncate_encoder(model: transformers.PreTrainedModel, top_layer: int) -> None:
+    """
+    Drop the transformer layers above `top_layer`, so that a forward pass stops there.
+
+    `output.hidden_states[L]` is the output of layer L (0 = the encoder input), which does not
+    depend on the layers above it, so the extracted states are unchanged; extracting layer 8
+    alone then skips a third of the transformer. Opt in with
+    `+base_model.truncate_above_extracted=true`.
+
+    Only for post-LN encoders (wav2vec2-base: `do_stable_layer_norm=False`). Pre-LN encoders
+    apply a final layer norm to the last hidden state, which truncation would move.
+    """
+    if getattr(model.config, "do_stable_layer_norm", False):
+        raise ValueError("truncate_above_extracted is only valid for post-LN encoders "
+                         "(do_stable_layer_norm=False)")
+    num_layers = len(model.encoder.layers)
+    if top_layer < num_layers:
+        model.encoder.layers = model.encoder.layers[:top_layer]
+        print(f"truncate_above_extracted: running {top_layer} of {num_layers} transformer layers")
+
+
 @hydra.main(config_path="../conf", config_name="config.yaml", version_base="1.2")
 def main(config: DictConfig):
     feature_extractor = prepare_feature_extractor(config)
@@ -226,6 +247,8 @@ def main(config: DictConfig):
     model = transformers.AutoModel.from_pretrained(config.base_model.model_ref).to(config.device)
 
     layer_paths = get_layer_paths(config)
+    if config.base_model.get("truncate_above_extracted", False):
+        truncate_encoder(model, max(layer_paths))
     writer = HiddenStateWriter(layer_paths, model.name_or_path, model.config.hidden_size)
     try:
         extract_hidden_states(
